@@ -1,2 +1,2 @@
-# CFM101_Team_Assignment
-This is our work for the CFM101 Team Assignment
+# Portfolio Analyzer
+This program, when given a csv file of a list of stocks, will return the ones that it think will provide the best returns.
