@@ -156,7 +156,7 @@ def main():
 
     ticker_lst += filtering(15, stock_correlation_tiers)
 
-
     print(ticker_lst)
 
-main()
+if __name__ == "__main__":
+    main()
