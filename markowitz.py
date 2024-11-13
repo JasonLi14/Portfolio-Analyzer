@@ -9,7 +9,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import datetime
 
 from typing import Tuple
 
@@ -50,10 +49,12 @@ def getClosePrices(start: str, end: str, tickers: list, cutoff: str) -> pd.DataF
     return stock_data
 
 
-def simulateRandom(tests: int, stock_data: pd.DataFrame) -> Tuple[list, list]:
+def simulateRandom(tests: int, stock_data: pd.DataFrame) -> Tuple[list, list, float, float]:
     # Simulates tests amount of tests with random weightings
     stocks_amount = len(stock_data.columns)
     results = [[], [], []]
+    min_std = 1000  # We want to find the minimum and maximum standard deviations later
+    max_std = -1000
     weighting_record = []
     for test in range(tests):  # simulate a set amount of tests
         weighting = np.random.random(size=stocks_amount)  # Find random weightings
@@ -64,8 +65,10 @@ def simulateRandom(tests: int, stock_data: pd.DataFrame) -> Tuple[list, list]:
         results[0].append(avg_return)
         results[1].append(std)
         results[2].append(avg_return / std * (12 ** 0.5))  # annualized Sharpe Ratio
+        min_std = min(std, min_std)
+        max_std = max(std, max_std)
         weighting_record.append(weighting)
-    return results, weighting_record
+    return results, weighting_record, min_std, max_std
 
 
 def plotSimulation(results: list):
@@ -77,14 +80,72 @@ def plotSimulation(results: list):
     plt.xlabel("Standard Deviation")
     plt.ylabel("Average Monthly Returns")
     plt.colorbar(label="Sharpe Ratio")
-    plt.show()
+
+
+def findEfficientFrontier(results: list, weights: list, min_std: float, max_std: float):
+    # This function will go through the results and pick the ones with the highest return
+    # Per "group" of standard deviations.
+    # Create groups
+    result_groups = []
+    start = round(min_std * 10)
+    i = start  # Create groups that are 0.1 apart to make it easy to sort
+    std_groups = [i/10]
+    while i <= max_std * 10:
+        i = i + 1
+        std_groups.append(i/10)
+        result_groups.append([])
+    result_groups.append([])  # One more
+    # Put results into groups
+
+    amt_groups = len(result_groups) - 1
+    for i in range(len(results[1])):
+        result_i = round(results[1][i] * 10) - start
+        # Insert a tuple with relevant information
+        if result_i <= amt_groups:
+            result_groups[result_i].append((results[0][i],
+                                            results[1][i],
+                                            results[2][i],
+                                            weights[i]))
+
+    # Find the most efficient in each category, i.e. highest return, and insert them into a list
+    best_portfolios = []
+    for group in result_groups:
+        highest_return = 0
+        best_portfolio = None
+        for portfolio in group:
+            if portfolio[0] > highest_return:  # The portfolio has higher returns
+                highest_return = portfolio[0]
+                best_portfolio = portfolio
+        if best_portfolio is not None:  # Do not add from categories without a single portfolio
+            best_portfolios.append(best_portfolio)
+    return best_portfolios  # Notice that this is already sorted by risk
+
+
+def getRiskAdjustedPf(preference: float, best_portfolios: list) -> tuple:
+    # Requires that scale is from 0 to 1
+    # This will get the weighting of the portfolio for the risk we want
+    pf_lst_len = len(best_portfolios) - 1  # We need to minus one to not get past the last index
+    preferred_index = round(pf_lst_len * preference)
+    return best_portfolios[preferred_index]
 
 
 if __name__ == "__main__":
     valid_tickers = ['LLY', 'ABBV', 'AAPL', 'BMY', 'UNH', 'UPS', 'CAT', 'TXN', 'PEP',
                      'RY.TO', 'ACN', 'PG', 'QCOM', 'MRK', 'T.TO', 'PM', 'BLK', 'TD.TO'
                      ]
-    data = getClosePrices('2012-11-09', '2024-11-09', valid_tickers[:5], '2014-01-01')
-    print(data.head())
-    simulation_results, simulation_weights = simulateRandom(10000, data)
+    data = getClosePrices('2012-11-09', '2024-11-09', valid_tickers[3:15], '2014-01-01')
+    simulation_results, simulation_weights, min_risk, max_risk = simulateRandom(3000, data)
+
     plotSimulation(simulation_results)
+    best_pfs = findEfficientFrontier(simulation_results, simulation_weights, min_risk, (max_risk + min_risk)/2)
+    # Plot the best portfolios
+    best_pfs_x = [pf[1] for pf in best_pfs]  # Get all the x values
+    best_pfs_y = [pf[0] for pf in best_pfs]
+    plt.scatter(best_pfs_x, best_pfs_y, label="Optimal Portfolios")
+    plt.legend()
+    plt.show()
+
+    # Find the portfolio we want
+    weightings = [pf[3] for pf in best_pfs]
+    chosen_weighting = getRiskAdjustedPf(1, weightings)
+    print(chosen_weighting)
