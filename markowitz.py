@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-from typing import Tuple
+from typing import Tuple, List
 
 # other modules
 import jason
@@ -49,6 +49,18 @@ def getClosePrices(start: str, end: str, tickers: list, cutoff: str) -> pd.DataF
     return stock_data
 
 
+def getRandomWeightings(length: int, min_weight: float = 0) -> List[float]:
+    # Returns a list of random weightings
+    # Requires that the min_weight * len <= 1
+    weightings_lst = np.random.random(size=length)  # Find random weightings
+    weight_remainder = 1 - min_weight
+    # Make sure weightings_lst sums up to weight remainder
+    weightings_lst /= np.sum(weightings_lst)
+    weightings_lst *= 1 - min_weight
+    weightings_lst += min_weight
+    return weightings_lst.tolist()
+
+
 def simulateRandom(tests: int, stock_data: pd.DataFrame) -> Tuple[list, list, float, float]:
     # Simulates tests amount of tests with random weightings
     stocks_amount = len(stock_data.columns)
@@ -57,17 +69,15 @@ def simulateRandom(tests: int, stock_data: pd.DataFrame) -> Tuple[list, list, fl
     max_std = -1000
     weighting_record = []
     for test in range(tests):  # simulate a set amount of tests
-        weighting = np.random.random(size=stocks_amount)  # Find random weightings
-        weighting /= np.sum(weighting)  # make sure it adds up to 1
-        weighting = weighting.tolist()
-        weighted_df = applyWeightings(stock_data, weighting, 1000000)  # Find df with weightings
+        weightings = getRandomWeightings(stocks_amount, 0.1)
+        weighted_df = applyWeightings(stock_data, weightings, 1000000)  # Find df with weightings
         avg_return, std = getPortfolioResults(weighted_df)  # Find metrics for performance
         results[0].append(avg_return)
         results[1].append(std)
         results[2].append(avg_return / std * (12 ** 0.5))  # annualized Sharpe Ratio
         min_std = min(std, min_std)
         max_std = max(std, max_std)
-        weighting_record.append(weighting)
+        weighting_record.append(weightings)
     return results, weighting_record, min_std, max_std
 
 
@@ -133,8 +143,8 @@ if __name__ == "__main__":
     valid_tickers = ['LLY', 'ABBV', 'AAPL', 'BMY', 'UNH', 'UPS', 'CAT', 'TXN', 'PEP',
                      'RY.TO', 'ACN', 'PG', 'QCOM', 'MRK', 'T.TO', 'PM', 'BLK', 'TD.TO'
                      ]
-    data = getClosePrices('2012-11-09', '2024-11-09', valid_tickers[3:15], '2014-01-01')
-    simulation_results, simulation_weights, min_risk, max_risk = simulateRandom(3000, data)
+    data = getClosePrices('2012-11-09', '2024-11-09', valid_tickers[3:10], '2014-01-01')
+    simulation_results, simulation_weights, min_risk, max_risk = simulateRandom(1, data)
 
     plotSimulation(simulation_results)
     best_pfs = findEfficientFrontier(simulation_results, simulation_weights, min_risk, (max_risk + min_risk)/2)
@@ -146,6 +156,6 @@ if __name__ == "__main__":
     plt.show()
 
     # Find the portfolio we want
-    weightings = [pf[3] for pf in best_pfs]
-    chosen_weighting = getRiskAdjustedPf(1, weightings)
+    efficient_weightings = [pf[3] for pf in best_pfs]
+    chosen_weighting = getRiskAdjustedPf(1, efficient_weightings)
     print(chosen_weighting)
