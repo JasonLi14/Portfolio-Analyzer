@@ -9,7 +9,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+from pypfopt import EfficientFrontier
+from pypfopt import risk_models
+from pypfopt import expected_returns
 from typing import Tuple, List
 
 # other modules
@@ -69,7 +71,7 @@ def simulateRandom(tests: int, stock_data: pd.DataFrame) -> Tuple[list, list, fl
     max_std = -1000
     weighting_record = []
     for test in range(tests):  # simulate a set amount of tests
-        weightings = getRandomWeightings(stocks_amount, 0.1)
+        weightings = getRandomWeightings(stocks_amount, 0.03)
         weighted_df = applyWeightings(stock_data, weightings, 1000000)  # Find df with weightings
         avg_return, std = getPortfolioResults(weighted_df)  # Find metrics for performance
         results[0].append(avg_return)
@@ -131,6 +133,15 @@ def findEfficientFrontier(results: list, weights: list, min_std: float, max_std:
     return best_portfolios  # Notice that this is already sorted by risk
 
 
+def optimizedEF(stocks: pd.DataFrame):
+    # This will return the efficient frontier (i.e. most return for different amount of risk)
+    # We are using the pypfopt library
+    returns = expected_returns.mean_historical_return(stocks)
+    S = risk_models.sample_cov(stocks)
+    EF = EfficientFrontier(returns, S)
+    return EF
+
+
 def getRiskAdjustedPf(preference: float, best_portfolios: list) -> tuple:
     # Requires that scale is from 0 to 1
     # This will get the weighting of the portfolio for the risk we want
@@ -144,7 +155,8 @@ if __name__ == "__main__":
                      'RY.TO', 'ACN', 'PG', 'QCOM', 'MRK', 'T.TO', 'PM', 'BLK', 'TD.TO'
                      ]
     data = getClosePrices('2012-11-09', '2024-11-09', valid_tickers[3:10], '2014-01-01')
-    simulation_results, simulation_weights, min_risk, max_risk = simulateRandom(1, data)
+    """
+    simulation_results, simulation_weights, min_risk, max_risk = simulateRandom(10, data)
 
     plotSimulation(simulation_results)
     best_pfs = findEfficientFrontier(simulation_results, simulation_weights, min_risk, (max_risk + min_risk)/2)
@@ -159,3 +171,8 @@ if __name__ == "__main__":
     efficient_weightings = [pf[3] for pf in best_pfs]
     chosen_weighting = getRiskAdjustedPf(1, efficient_weightings)
     print(chosen_weighting)
+    """
+    efficientFrontier = optimizedEF(data)
+    best_sharpe = efficientFrontier.max_sharpe()
+    cleaned_weights = efficientFrontier.clean_weights()
+    print(cleaned_weights)
