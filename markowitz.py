@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pypfopt import EfficientFrontier
 from pypfopt import risk_models
-from pypfopt import expected_returns
+from pypfopt import expected_returns, base_optimizer
 from typing import Tuple, List
 
 # other modules
@@ -41,7 +41,7 @@ def applyWeightings(df: pd.DataFrame, weightings: list, investment: int) -> pd.D
 
 
 def getClosePrices(start: str, end: str, tickers: list, cutoff: str) -> pd.DataFrame:
-    stock_data = yf.download(" ".join(tickers), start=start, end=end, interval='1mo')["Close"]
+    stock_data = yf.download(" ".join(tickers), start=start, end=end, interval='1d')["Close"]
     stock_data.index = stock_data.index.strftime("%Y-%m-%d")
     # loop through tickers
     for column in stock_data.columns.values:
@@ -55,7 +55,6 @@ def getRandomWeightings(length: int, min_weight: float = 0) -> List[float]:
     # Returns a list of random weightings
     # Requires that the min_weight * len <= 1
     weightings_lst = np.random.random(size=length)  # Find random weightings
-    weight_remainder = 1 - min_weight
     # Make sure weightings_lst sums up to weight remainder
     weightings_lst /= np.sum(weightings_lst)
     weightings_lst *= 1 - min_weight
@@ -133,12 +132,22 @@ def findEfficientFrontier(results: list, weights: list, min_std: float, max_std:
     return best_portfolios  # Notice that this is already sorted by risk
 
 
-def optimizedEF(stocks: pd.DataFrame):
-    # This will return the efficient frontier (i.e. most return for different amount of risk)
+def getReturns(stocks):
     # We are using the pypfopt library
-    returns = expected_returns.mean_historical_return(stocks)
-    S = risk_models.sample_cov(stocks)
-    EF = EfficientFrontier(returns, S)
+    # We use expected returns to prioritize current data
+    return expected_returns.ema_historical_return(stocks)
+
+
+def getRisk(stocks):
+    # We are using the pypfopt library
+    return risk_models.sample_cov(stocks)
+
+
+def optimizedEF(returns: pd.Series, risk: pd.DataFrame, min_weight: float = 0, max_weight: float = 0.15):
+    # This will return the efficient frontier (i.e. most return for different amount of risk)
+
+    # Because there's limits, we have to incorporate them
+    EF = EfficientFrontier(returns, risk, weight_bounds=(min_weight, max_weight))
     return EF
 
 
@@ -150,11 +159,23 @@ def getRiskAdjustedPf(preference: float, best_portfolios: list) -> tuple:
     return best_portfolios[preferred_index]
 
 
+def getTargetRisk(expected_return: pd.Series, risks: pd.DataFrame, min_weight: float, max_weight: float, ratio: float):
+    # Requires that the ratio is in [0, 1]
+    # Returns a risk based on a scale given the stocks.
+    # We get the max return and min volatility, and then multiply by the ratio
+    ef = EfficientFrontier(expected_return, risks, weight_bounds=(min_weight, max_weight))
+    min_volatility_weights = ef.min_volatility()
+    min_volatility = base_optimizer.portfolio_performance(min_volatility_weights, expected_return,
+                                                          risks)[1]
+    # Return the minimum volatility times the ratio
+    return min_volatility * (1 + ratio)
+
+
 if __name__ == "__main__":
     valid_tickers = ['LLY', 'ABBV', 'AAPL', 'BMY', 'UNH', 'UPS', 'CAT', 'TXN', 'PEP',
                      'RY.TO', 'ACN', 'PG', 'QCOM', 'MRK', 'T.TO', 'PM', 'BLK', 'TD.TO'
                      ]
-    data = getClosePrices('2012-11-09', '2024-11-09', valid_tickers[3:10], '2014-01-01')
+    data = getClosePrices('2012-11-09', '2024-11-09', valid_tickers, '2014-01-07').dropna()
     """
     simulation_results, simulation_weights, min_risk, max_risk = simulateRandom(10, data)
 
@@ -172,7 +193,23 @@ if __name__ == "__main__":
     chosen_weighting = getRiskAdjustedPf(1, efficient_weightings)
     print(chosen_weighting)
     """
-    efficientFrontier = optimizedEF(data)
-    best_sharpe = efficientFrontier.max_sharpe()
+    stock_returns = getReturns(data)
+    stock_risks = getRisk(data)
+    efficientFrontier = optimizedEF(stock_returns, stock_risks, 1 / (2 * len(data.columns)))
+    # We aim for higher volatility to try to beat the market
+    target_risk = getTargetRisk(stock_returns, stock_risks, 1 / (2 * len(data.columns)), 0.1, 0.15)
+    print("Target Risk: ", target_risk)
+    desired_returns = efficientFrontier.efficient_risk(target_risk)  # we can control the amount of volatility we want
     cleaned_weights = efficientFrontier.clean_weights()
-    print(cleaned_weights)
+    # print(cleaned_weights)
+    # Plot
+    weightings_list = []
+    for i in cleaned_weights:
+        weightings_list.append(cleaned_weights[i])
+    weighted_df = applyWeightings(data, weightings_list, 1000000)
+    print(weighted_df[1:20])
+    plt.plot(weighted_df.index, weighted_df.sum(axis=1))
+    plt.xticks([])
+    plt.show()
+    # Check the returns
+    print(efficientFrontier.portfolio_performance(verbose=True, risk_free_rate=0.02))
