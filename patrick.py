@@ -6,9 +6,18 @@ from Tools.scripts.dutree import display
 import jason
 
 
-# ticker_prices consumes a list of stocks, start date, end date, and an interval
-# and produces a dataframe of prices for each of the stock
 def ticker_prices(ticker_list, start, end, interval):
+    """
+        This function, when given a list of tickers, a start date, end date, and interval
+        will return a dataframe of the prices of the tickers from the start date to the end
+        date at the set interval
+
+        :param ticker_list: int
+        :param start: datetime
+        :param end: datetime
+        :return: dataframe
+        """
+
     prices = pd.DataFrame()
 
     hist_ticker = yf.Ticker(ticker_list[0])
@@ -22,10 +31,20 @@ def ticker_prices(ticker_list, start, end, interval):
 
     return prices
 
+#feed pct_change() data
+def sort_by_sharpe(price_pct, min_sharpe, min_return, max_std):
+    """
+        This function, when given a dataframe of
+        price percent change, a dataframe of prices, a minimum sharpe ratio, a minimum return
+        and maximum standard deviation will produce a dataframe with the returns, standard deviation
+        sharpe ratio and prices of all stocks in the given dataframe that meets the set criteria
 
-# sort_by_sharpe consumes a dataframe of stocks from the same industry and their monthly prices
-# and produces a sorted dataframe by their sharpe ratio.
-def sort_by_sharpe(stocks, min_sharpe, min_return, max_std):
+        :param price_pct: dataframe
+        :param min_sharpe: float
+        :param min_return: float
+        :param: max_std: float
+        :return: dataframe
+        """
 
     sharpe_df = pd.DataFrame(columns=['Returns', 'Std', 'Sharpe'])
     returns = 0
@@ -33,16 +52,16 @@ def sort_by_sharpe(stocks, min_sharpe, min_return, max_std):
 
     stock_info = {}#fixed length list of Ticker, Returns, Std, Sharpe
 
-    for ticker in stocks.columns:
+    for ticker in price_pct.columns:
 
         #work out equations - pct_change() on all,
-        returns = stocks[ticker].pct_change(fill_method=None).mean()
+        returns = price_pct[ticker].mean()
 
         #work out equations
-        std = stocks[ticker].pct_change(fill_method=None).std()
+        std = price_pct[ticker].std()
 
         #multiply sharpe_ratio by sqrt(15)
-        sharpe = returns/std * 52
+        sharpe = returns/std * (50 ** 0.5)
 
         #print(ticker, sharpe, returns, std)
 
@@ -57,14 +76,36 @@ def sort_by_sharpe(stocks, min_sharpe, min_return, max_std):
 
             sharpe_df.loc[ticker] = stock_info
 
-
-
     sharpe_df = sharpe_df.sort_values('Sharpe', ascending = False)
 
     return sharpe_df
 
-#takes a dataframe and converts it to a list of tickers.
+def keep_tickers(dataframe, list):
+    """
+    This function, given a dataframe and list of tickers, will keep
+    all items in the dataframe with a ticker in the list. Tickers must be in
+    the Dataframe
+
+    :param dataframe: pd.DataFrame
+    :param list: list[Str]
+    :return: pd.DataFrame
+    """
+
+    newframe = pd.DataFrame()
+
+    for i in list:
+        newframe[i] = dataframe[i]
+
+    return newframe
+
 def stock_df_to_ticker(dataframe):
+    """
+        This function, when given a dataframe of stocks, will return a list of ticker strings
+
+        :param dataframe: dataframe
+        :return: list[str]
+        """
+
     ticker_list = []
 
     for i in dataframe.index:
@@ -72,91 +113,109 @@ def stock_df_to_ticker(dataframe):
 
     return ticker_list
 
-'''
-def main():
-
-    ticker_list = ['AAPL', 'SHOP.TO', 'TD.TO', 'MSFT', 'NVDA', 'NFE', 'FIVE', 'GOEV', 'LI', 'APA', 'ACHC', 'IMAB',
-                   'REAL', 'BYND']
-
-    #ticker_list = jason.getAllTickers("Tickers_Example.csv").tolist()
-
-    #print(ticker_list)
-
-
-    start_date = '2019-07-01'
-    end_date = '2022-12-04'
-
-    stock_prices = ticker_prices(ticker_list, start_date, end_date, '1wk')
-
-    #print(stock_prices)
-
-
-    stock_sharpe = sort_by_sharpe(stock_prices, 0, 0, 1)
-
-    ticker_list = stock_df_to_ticker(stock_sharpe)
-
-    #print(stock_sharpe)
-'''
-
 def filtering(list_len, stock_correlation_tiers):
+    """
+    This function, when given how long the list will be and categorization of stocks,
+    will return a list of stocks that we want to craft the portfolio from.
+    :param list_len: int
+    :param stock_correlation_tiers: list[list[str]]
+    :return: list[str]
+    """
     ticker_list = []
-
-    i = 0
-
-    while i < len(stock_correlation_tiers) and len(ticker_list) < list_len:
-        ticker_list += stock_correlation_tiers[0]
-        #print(type(stock_correlation_tiers))
+    '''
+    while 0 < len(stock_correlation_tiers) and len(ticker_list) < list_len:
+        sub_list = stock_correlation_tiers[0]
+        while 0 < len(sub_list) and len(ticker_list) < list_len:
+            print(sub_list[0])
+            ticker_list.append(sub_list[0])
+            sub_list.pop(0)
 
         stock_correlation_tiers.pop(0)
+    '''
 
-        i += 1
+    while len(ticker_list) < list_len:
+        for i in range(len(stock_correlation_tiers)):
+            sub_list = stock_correlation_tiers[i]
+
+            if len(sub_list) > 0:
+                ticker_list.append(sub_list[0])
+                sub_list.pop(0)
+                stock_correlation_tiers[i] = sub_list
 
     return ticker_list
+
+def arrange_by_sharpe(prices:pd.DataFrame, sharpe:pd.DataFrame):
+    """
+    This function, when given how long the list will be and categorization of stocks,
+    will return a list of stocks that we want to craft the portfolio from.
+    :param prices: pd.DataFrame
+    :param sharpe: pd.DataFrame
+    :return: pd.DataFrame
+    """
+    new_prices = pd.DataFrame()
+
+    for i in sharpe.index:
+        #print(i)
+        #print(prices[i])
+        new_prices[i] = prices[i]
+
+    #print(new_prices)
+
+    return new_prices
+
+def correlation_filter(prices: pd.DataFrame, max_corr: float):
+    """
+    This function, when given a dataframe of prices and
+
+    :param prices: pd.DataFrame
+    :param max_corr: float
+    :return: list[Str]
+    """
+    correlations = prices.corr()
+
+    tickers = []
+
+    for i in correlations.index:
+        if correlations.loc[i].mean() <= max_corr:
+            tickers.append(i)
+
+
+    return tickers
 
 def main():
     '''ticker_list = ['AAPL', 'SHOP.TO', 'TD.TO', 'MSFT', 'NVDA', 'NFE', 'FIVE', 'GOEV', 'LI', 'APA', 'ACHC', 'IMAB',
                    'REAL', 'BYND', ]'''
 
-    ticker_list = jason.getAllTickers("Tickers_Example.csv").tolist()
+    #GATEEK: produces a dataframe with the price of a stock on a date range
 
-    #print(ticker_list)
+    file_tickers = jason.getAllTickers("Tickers_Example.csv").tolist()
 
-    start_date = '2019-07-01'
-    end_date = '2022-12-04'
+    start_date = '2020-07-01'
+    end_date = '2024-11-10'
 
-    stock_prices = ticker_prices(ticker_list, start_date, end_date, '1wk')
+    stock_prices = ticker_prices(file_tickers, start_date, end_date, '1wk')
 
-    # print(stock_prices)
+    stock_pct_change = stock_prices.pct_change()
 
-    #might
-    stock_sharpe = sort_by_sharpe(stock_prices, 0, 0, 1)
+    stock_pct_change = keep_tickers(stock_pct_change, correlation_filter(stock_pct_change, 0.75))
+
+    stock_sharpe = sort_by_sharpe(stock_pct_change, 0.25, 0, 1)
+
+    #print(stock_sharpe)
 
     best_stock = stock_sharpe.index[0]
 
-    print(best_stock)
+    stock_prices = arrange_by_sharpe(stock_prices, stock_sharpe)
 
+    stock_correlation_tiers = jason.categorize(stock_prices, best_stock, 10)
 
-    ticker_lst = stock_df_to_ticker(stock_sharpe)
-    print(ticker_lst)
-
-    test_stock = jason.getStockData(ticker_lst[1])
-
-    test_stock_pct = jason.convertToPct(test_stock)
-
-    test_stock_pct_stats = jason.getPctStats(test_stock_pct)
-
-    #multi_stock_df = pd.concat([jason.getStockData(ticker_lst[i]) for i in [0, 1, 2, 3, 5, 6, 7, 8, 9]], axis=1)
-    multi_stock_pct = jason.convertToPct(stock_prices)
-
-    stock_correlation_tiers = jason.categorize(multi_stock_pct, best_stock, 10)
-
-    print(stock_correlation_tiers)
+    #print(stock_sharpe)
+    #print(stock_correlation_tiers)
 
     ticker_lst = [best_stock]
 
-    ticker_lst += filtering(15, stock_correlation_tiers)
+    ticker_lst += filtering(24, stock_correlation_tiers)
 
     print(ticker_lst)
 
-if __name__ == "__main__":
-    main()
+main()
