@@ -49,10 +49,14 @@ def sort_by_sharpe(price_pct, min_sharpe, min_return, max_std):
     sharpe_df = pd.DataFrame(columns=['Returns', 'Std', 'Sharpe'])
     returns = 0
     std = 0
+    ticker = ""
 
     stock_info = {}#fixed length list of Ticker, Returns, Std, Sharpe
 
-    for ticker in price_pct.columns:
+    tick_list = price_pct.columns
+
+    for i in range(len(tick_list)):
+        ticker = tick_list[i]
 
         #work out equations - pct_change() on all,
         returns = price_pct[ticker].mean()
@@ -66,6 +70,16 @@ def sort_by_sharpe(price_pct, min_sharpe, min_return, max_std):
         #print(ticker, sharpe, returns, std)
 
         if sharpe > min_sharpe and returns > min_return and std < max_std:
+            stock_info = {
+                'Returns': returns,
+                'Std': std,
+                'Sharpe': sharpe
+            }
+
+            # stock_info = pd.DataFrame(stock_info)
+
+            sharpe_df.loc[ticker] = stock_info
+        elif tick_list.size - sharpe_df.index.size < 12:
             stock_info = {
                 'Returns': returns,
                 'Std': std,
@@ -175,10 +189,15 @@ def correlation_filter(prices: pd.DataFrame, max_corr: float):
 
     tickers = []
 
-    for i in correlations.index:
-        if correlations.loc[i].mean() <= max_corr:
-            tickers.append(i)
+    corr_list = correlations.index
 
+    for i in range(len(corr_list)):
+        tick = corr_list[i]
+
+        if correlations.loc[tick].mean() <= max_corr:
+            tickers.append(tick)
+        elif corr_list.size - len(tickers) < 12:
+            tickers.append(tick)
 
     return tickers
 
@@ -217,5 +236,3 @@ def main():
     ticker_lst += filtering(24, stock_correlation_tiers)
 
     print(ticker_lst)
-
-main()
