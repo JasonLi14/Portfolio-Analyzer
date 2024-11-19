@@ -133,6 +133,137 @@ def categorize(df:pd.DataFrame, pivot:str, categories:int):
     return stock_categories
 
 
+# FROM GATEEK's IPYNB
+def valid_stocks(tickers_file):
+    # Read CSV and get tickers
+    tickers_df = pd.read_csv(tickers_file)
+    tickers_df.columns = (['Tickers'])
+    tickers_list = tickers_df['Tickers'].tolist()
+
+    # Start and end dates
+    start = '2023-10-01'
+    end = '2024-09-30'
+
+    valid_tickers = []
+
+    for ticker in tickers_list:
+        # Loads in ticker info from yfinance
+        stock = yf.Ticker(ticker)
+        info = stock.fast_info 
+
+        # filter ticker by currency
+        try:
+            currency = info['currency']
+        except:
+            continue
+
+        if currency != 'USD' and currency != 'CAD':
+            continue
+
+        #filter ticker by average monthly volume
+        try:
+            hist = stock.history(start=start, end=end, interval='1d')
+        except:
+            continue
+        monthly_volume = pd.DataFrame()
+        monthly_volume['volume'] = hist['Volume'].resample('M').sum()
+        monthly_volume['count'] = hist['Volume'].resample('M').count()
+        monthly_volume['avg monthly volume'] = monthly_volume['volume'] / monthly_volume['count']
+        invalid_trading_days = monthly_volume[monthly_volume['count'] < 18]
+        invalid_monthly_vol = monthly_volume[monthly_volume['avg monthly volume'] < 100000]
+
+        if len(invalid_monthly_vol) > 0 or len(invalid_trading_days) > 0:
+            continue
+
+
+        valid_tickers.append(ticker)
+
+    return valid_tickers
+
+
+def get_close_prices(start, end, tickers, cutoff):
+
+    multi_data = pd.DataFrame()
+    df = []
+    appended_tickers = []
+
+    # loop through tickers 
+    for ticker in tickers:
+        # get all data and put into a series
+        data = yf.download(ticker, start=start, end=end, interval='1d')
+        close = data['Close']
+        close = close.rename(ticker)
+
+        # if the first close price is less than cutoff
+        if close.index.min() < pd.Timestamp(cutoff):
+            # add stock close prices to df
+            df.append(close)
+            appended_tickers.append(ticker)
+
+    # create df with all the data
+    multi_data = pd.concat(df, axis=1)
+    #drop all values so that there are valid data points for each date in the index
+    multi_data.dropna(subset=appended_tickers, inplace=True)
+
+    # Get CAD->USD exchange rate
+    cadusd = yf.download('CAD=x', start=start, end=end, interval='1d')
+
+    # convert everything to CAD
+    for ticker in appended_tickers:
+        stock = yf.Ticker(ticker)
+        info = stock.fast_info
+
+        if info['currency'] == 'USD':
+            multi_data[ticker] = multi_data[ticker] * cadusd['Close']
+    
+    return multi_data
+
+
+def buy_shares(weightings_df, prices_df):
+
+    cash = 1000000
+    flat_fee = 3.95
+    fee_per_share = 0.001
+
+    weightings_df['Close Price'] = prices_df.reindex(weightings_df.index)
+
+    # 1: Calculate the initial investment of each stock and the amount of shares
+    weightings_df['Investment Amt'] = cash * (weightings_df['Weight'] / 100)
+    weightings_df['Shares'] = weightings_df['Investment Amt'] / weightings_df['Close Price']
+
+    # 2: Calculate the fees based on what kind of fee structure is cheaper
+    weightings_df['fees'] = np.minimum(weightings_df['Shares'] * fee_per_share, flat_fee)
+
+    # 3: Calculate total investment with fees added
+    weightings_df['Investment with fees'] = weightings_df['Shares'] * weightings_df['Close Price'] + weightings_df['fees']
+    total_with_fees = weightings_df['Investment with fees'].sum()
+
+    # 4: Adjust investment to keep the total under the budget
+    adjustment_factor = cash / total_with_fees
+    weightings_df['Adjusted Investment Amt'] = weightings_df['Investment Amt'] * adjustment_factor
+    weightings_df['Adjusted Shares'] = weightings_df['Adjusted Investment Amt'] / weightings_df['Close Price']
+
+    # 5: Recalculate fees
+    weightings_df['Adjusted fees'] = np.minimum(weightings_df['Adjusted Shares'] * fee_per_share, flat_fee)
+
+    # 6: Final investment for each stock
+    weightings_df['Final Investment'] = weightings_df['Adjusted Shares'] * weightings_df['Close Price'] + weightings_df['Adjusted fees']
+
+    # Create Final Portfolio
+    Portfolio_Final = pd.DataFrame()
+    Portfolio_Final['Ticker'] = weightings_df.index
+    Portfolio_Final.index = Portfolio_Final['Ticker']
+    Portfolio_Final['Price'] = weightings_df['Close Price']
+    Portfolio_Final['Currency'] = 'CAD' # NEED TO FIGURE OUT A WAY TO GET ACCURATE CURRENCY DATA
+    Portfolio_Final['Shares'] = weightings_df['Adjusted Shares']
+    Portfolio_Final['Value'] = weightings_df['Adjusted Investment Amt']
+    Portfolio_Final['Weight'] = weightings_df['Weight']
+
+    Portfolio_Final.index = range(1, len(Portfolio_Final) + 1)
+
+    return Portfolio_Final
+
+
 if __name__ == "__main__":
     # Just to test my functions
     ticker_lst = getAllTickers()
